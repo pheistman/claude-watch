@@ -1,6 +1,6 @@
 ---
 name: watch
-description: Watch a video (URL or local path). Downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls the transcript from captions (or Whisper API fallback), and hands the result to Claude so it can answer questions about what's in the video.
+description: Watch a video (URL or local path). Downloads with yt-dlp, extracts a transcript from captions or Whisper, and answers questions — falling back to frame extraction only when the transcript alone is insufficient.
 argument-hint: "<video-url-or-path> [question]"
 allowed-tools: Bash, Read, AskUserQuestion
 homepage: https://github.com/bradautomates/claude-video
@@ -12,7 +12,7 @@ user-invocable: true
 
 # /watch — Claude watches a video
 
-You don't have a video input; this skill gives you one. A Python script downloads the video, extracts frames as JPEGs, gets a timestamped transcript (native captions first, then Whisper API as fallback), and prints frame paths. You then `Read` each frame path to see the images and combine them with the transcript to answer the user.
+You don't have a video input; this skill gives you one. A Python script downloads the video, extracts frames as JPEGs, gets a timestamped transcript (native captions first, then Whisper API as fallback), and prints frame paths. **Use a transcript-first approach: read the transcript before touching frames. Only read frame images when the transcript alone cannot answer the question.**
 
 ## Step 0 — Setup preflight (runs every `/watch` invocation, silent on success)
 
@@ -75,6 +75,8 @@ Within a single session, you can skip Step 0 on follow-up `/watch` calls — onc
 python3 "${CLAUDE_SKILL_DIR}/scripts/watch.py" "<source>"
 ```
 
+The script downloads the video, extracts frames, and produces a transcript. After it completes, proceed to Step 3 before reading any frames.
+
 Optional flags:
 - `--start T` / `--end T` — focus on a section. Accepts `SS`, `MM:SS`, or `HH:MM:SS`. When either is set, fps auto-scales denser (see "Focusing on a section" below).
 - `--max-frames N` — lower the cap for tighter token budget (e.g. `--max-frames 40`)
@@ -113,15 +115,32 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/watch.py" "$URL" --start 2:15 --end 2:45 --
 python3 "${CLAUDE_SKILL_DIR}/scripts/watch.py" "$URL" --start 1:12:00
 ```
 
-**Step 3 — Read every frame path the script lists.** The Read tool renders JPEGs directly as images for you. Read all frames in a single message (parallel tool calls) so you see them together. The frames are in chronological order with a `t=MM:SS` timestamp so you can align them to the transcript.
+**Step 3 — Read the transcript first.** The script saves a transcript file to the working directory (look for `transcript.txt` or similar in the out-dir printed by the script). Read it before touching any frames. Then assess:
 
-**Step 4 — answer the user.** You now have two streams of evidence:
-- **Frames** — what's on screen at each timestamp
-- **Transcript** — what's said at each timestamp. The report's header shows the source (`captions` = yt-dlp pulled native subs; `whisper (groq)` or `whisper (openai)` = transcribed by API).
+**Transcript is sufficient when:**
+- The question is about what was *said* (content, meaning, argument, summary)
+- The transcript is complete and readable with no large gaps
+- No specific on-screen visual is being asked about
+
+**Frames are needed when:**
+- Question explicitly asks about on-screen content, diagrams, slide text, or visuals
+- Transcript is unavailable (no captions + Whisper failed) — script will say "none available"
+- Transcript quality is too poor to answer (heavy garbling, large gaps)
+- User asked "what does it show", "what's on screen", "what does the slide say", or similar
+
+If the transcript is sufficient → skip to Step 5. Tell the user frames are available if visual follow-up questions arise.
+
+If frames are needed → continue to Step 4.
+
+**Step 4 — Read frames (only when needed).** The Read tool renders JPEGs directly as images for you. Read all frames in a single message (parallel tool calls) so you see them together. The frames are in chronological order with a `t=MM:SS` timestamp so you can align them to the transcript.
+
+**Step 5 — answer the user.** Ground your answer in whichever sources you read:
+- **Transcript** — what was said at each timestamp. The script header shows the source: `captions`, `whisper (groq)`, or `whisper (openai)`.
+- **Frames** (if read) — what's on screen at each timestamp.
 
 If the user asked a specific question, answer it directly citing timestamps. If they didn't ask anything, summarize what happens in the video — structure, key moments, notable visuals, spoken content.
 
-**Step 5 — clean up.** The script prints a working directory at the end. If the user isn't going to ask follow-ups about this video, delete it with `rm -rf <dir>`. If they might, leave it in place.
+**Step 6 — clean up.** The script prints a working directory at the end. If the user isn't going to ask follow-ups about this video, delete it with `rm -rf <dir>`. If they might, leave it in place.
 
 ## Transcription
 
@@ -149,7 +168,9 @@ This skill burns tokens primarily on frames. Order of magnitude:
 - The transcript is cheap (a few thousand tokens at most for a 10-minute video).
 - Bumping `--resolution` to 1024 roughly quadruples the image tokens per frame. Only do it when necessary.
 
-If you already watched a video this session and the user asks a follow-up, do **not** re-run the script — you already have the frames and transcript in context. Just answer from what you have.
+**Transcript-first is the default.** For most videos — especially webinars, lectures, and spoken content — the transcript alone is sufficient. Reading frames is a fallback for visually dense content or explicit visual questions, not the default path. Skipping frames entirely when not needed saves 15–25× in image tokens.
+
+If you already watched a video this session and the user asks a follow-up, do **not** re-run the script — you already have the transcript (and frames if you read them) in context. Just answer from what you have.
 
 ## Security & Permissions
 

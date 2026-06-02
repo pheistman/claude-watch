@@ -1,3 +1,8 @@
+# API keys and local config — never commit
+.env
+.env.*
+*.env
+
 # OS / editor / tooling
 .DS_Store
 .entire/
@@ -14,3 +19,12 @@ htmlcov/
 
 # local Claude Code settings
 .claude/settings.local.json
+
+# media artefacts from local testing
+frames/
+audio.mp3
+*.mp3
+*.mp4
+*.webm
+*.mkv
+*.mov

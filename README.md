@@ -2,20 +2,19 @@
 
 **Give Claude the ability to watch any video.**
 
-Claude Code:
-```
-/plugin marketplace add bradautomates/claude-video
-/plugin install watch@claude-video
+Claude Code (manual install):
+```bash
+git clone https://github.com/pheistman/claude-watch.git ~/.claude/skills/watch
 ```
 
-claude.ai (web): [download `watch.skill`](https://github.com/bradautomates/claude-video/releases/latest) and drop it into Settings → Capabilities → Skills.
+claude.ai (web): [download `watch.skill`](https://github.com/pheistman/claude-watch/releases/latest) and drop it into Settings → Capabilities → Skills.
 
 Codex / generic skills:
 ```bash
-git clone https://github.com/bradautomates/claude-video.git ~/.codex/skills/watch
+git clone https://github.com/pheistman/claude-watch.git ~/.codex/skills/watch
 ```
 
-Zero config to start — `yt-dlp` and `ffmpeg` install on first run via `brew` on macOS (Linux/Windows print exact commands). Captions cover most public videos for free. Whisper API key is only needed when a video has no captions.
+Zero config to start — `yt-dlp` and `ffmpeg` install on first run via `brew` on macOS (Linux/Windows print exact commands). Captions cover most public videos for free. A transcription API key is only needed when a video has no captions.
 
 ---
 
@@ -48,7 +47,7 @@ Claude is great at reading and synthesizing — but until now, video was the one
 1. **You paste a video and a question.** URL (anything yt-dlp supports — YouTube, Loom, TikTok, X, Instagram, plus a few hundred more) or a local path (`.mp4`, `.mov`, `.mkv`, `.webm`).
 2. **`yt-dlp` downloads it.** For URLs, into a temp working directory. For local files, no download — just probed in place.
 3. **`ffmpeg` extracts frames at an auto-scaled rate.** The frame budget is duration-aware: ≤30s gets ~30 frames, 30-60s gets ~40, 1-3min gets ~60, 3-10min gets ~80, longer gets 100 sparsely. Hard ceilings: 2 fps, 100 frames. JPEGs at 512px wide by default — bump with `--resolution 1024` if Claude needs to read on-screen text.
-4. **The transcript comes from one of two places.** First try: `yt-dlp` pulls native captions (manual or auto-generated) from the source. Free, instant, accurate-ish. Fallback: extract a mono 16 kHz audio clip and ship it to Whisper — Groq's `whisper-large-v3` (preferred — cheaper and faster) or OpenAI's `whisper-1`.
+4. **The transcript comes from one of two places.** First try: `yt-dlp` pulls native captions (manual or auto-generated) from the source. Free, instant, accurate-ish. Fallback: extract a mono 16 kHz audio clip and ship it to whichever provider is available — Groq `whisper-large-v3` (auto-selected for short videos), AssemblyAI (auto-selected for long videos, 100 hrs/month free), Deepgram nova-2, or OpenAI `whisper-1`. Use `--provider` to override.
 5. **Frames + transcript are handed to Claude.** The script prints frame paths with `t=MM:SS` markers and the transcript with timestamps. Claude `Read`s each frame in parallel — JPEGs render directly as images in its context.
 6. **Claude answers grounded in what's actually on screen and in the audio.** Not "based on the description" or "according to the title." It saw the frames. It heard the transcript. It answers the way someone who watched the video would.
 7. **Cleanup.** The script prints a working directory at the end. If you're not asking follow-ups, Claude removes it.
@@ -71,23 +70,19 @@ When the user names a moment ("around 2:30", "the last 30 seconds", "from 0:45 t
 
 | Surface | Install |
 |---------|---------|
-| **Claude Code** | `/plugin marketplace add bradautomates/claude-video` then `/plugin install watch@claude-video` |
-| **claude.ai** (web) | [Download `watch.skill`](https://github.com/bradautomates/claude-video/releases/latest) → Settings → Capabilities → Skills → `+` |
-| **Codex** | `git clone https://github.com/bradautomates/claude-video.git ~/.codex/skills/watch` |
-| **Manual / dev** | `git clone https://github.com/bradautomates/claude-video.git ~/.claude/skills/watch` |
+| **Claude Code** | `git clone https://github.com/pheistman/claude-watch.git ~/.claude/skills/watch` |
+| **claude.ai** (web) | [Download `watch.skill`](https://github.com/pheistman/claude-watch/releases/latest) → Settings → Capabilities → Skills → `+` |
+| **Codex** | `git clone https://github.com/pheistman/claude-watch.git ~/.codex/skills/watch` |
 
-### Claude Code
+### Claude Code (manual)
 
+```bash
+git clone https://github.com/pheistman/claude-watch.git ~/.claude/skills/watch
 ```
-/plugin marketplace add bradautomates/claude-video
-/plugin install watch@claude-video
-```
-
-Update later with `/plugin update watch@claude-video`.
 
 ### claude.ai (web)
 
-1. [Download `watch.skill`](https://github.com/bradautomates/claude-video/releases/latest) from the latest release.
+1. [Download `watch.skill`](https://github.com/pheistman/claude-watch/releases/latest) from the latest release.
 2. Go to Settings → Capabilities → Skills.
 3. Click `+` and drop the file in.
 
@@ -96,13 +91,7 @@ Enable "Code execution and file creation" under Capabilities first — the skill
 ### Codex
 
 ```bash
-git clone https://github.com/bradautomates/claude-video.git ~/.codex/skills/watch
-```
-
-### Manual (developer)
-
-```bash
-git clone https://github.com/bradautomates/claude-video.git ~/.claude/skills/watch
+git clone https://github.com/pheistman/claude-watch.git ~/.codex/skills/watch
 ```
 
 ## First run
@@ -118,14 +107,22 @@ After setup, preflight is silent and `/watch` just works. The check is a sub-100
 
 ## Bring your own keys
 
-Captions cover the majority of public videos for free. The Whisper fallback only kicks in when a video genuinely has no caption track — typically local files, TikToks, some Vimeos, and the occasional caption-less YouTube upload.
+Captions cover the majority of public videos for free. Transcription only kicks in when a video genuinely has no caption track — typically local files, TikToks, some Vimeos, and the occasional caption-less YouTube upload.
 
-| Capability | What you need | Cost |
-|------------|---------------|------|
-| Download + native captions | `yt-dlp` + `ffmpeg` | Free |
-| Whisper fallback (preferred) | [Groq API key](https://console.groq.com/keys) — `whisper-large-v3` | Cheap, fast |
-| Whisper fallback (alt) | [OpenAI API key](https://platform.openai.com/api-keys) — `whisper-1` | Standard pricing |
-| Disable Whisper entirely | `--no-whisper` | Free, frames-only when no captions |
+Auto-selection (when `--provider` is not specified):
+- Video < 30 min → **Groq** (fast, cheap)
+- Video ≥ 30 min → **AssemblyAI** (async, no file-size cap)
+
+| Provider | Key env var | Model | Best for | Cost |
+|----------|-------------|-------|----------|------|
+| **Groq** (default, short) | `GROQ_API_KEY` | whisper-large-v3 | < 30 min, fast turnaround | Very cheap |
+| **AssemblyAI** (default, long) | `ASSEMBLYAI_API_KEY` | best | ≥ 30 min, batch work | 100 hrs/month free |
+| **Deepgram** | `DEEPGRAM_API_KEY` | nova-2 | utterance-level accuracy | Pay-as-you-go |
+| **OpenAI** | `OPENAI_API_KEY` | whisper-1 | fallback | Standard pricing |
+| Native captions | — | — | most public YouTube | Free |
+| `--no-whisper` | — | — | frames-only, no captions needed | Free |
+
+Keys are read from `~/.config/watch/.env` (created at `0600` by `setup.py`) or from environment variables. Run `python3 scripts/setup.py` to scaffold the file.
 
 ## Usage
 
@@ -145,18 +142,19 @@ Focused on a specific section — denser frame budget, lower token cost:
 
 Other knobs (passed to `scripts/watch.py`):
 
+- `--provider groq|assemblyai|deepgram|openai` — force a specific transcription provider.
+- `--whisper groq|openai` — deprecated alias for `--provider` (still accepted).
+- `--no-whisper` — disable transcription entirely; frames only.
 - `--max-frames N` — lower the frame cap for a tighter token budget.
 - `--resolution W` — bump frame width to 1024 px when Claude needs to read on-screen text (slides, terminals, code).
 - `--fps F` — override the auto-fps calculation (still capped at 2 fps).
-- `--whisper groq|openai` — force a specific Whisper backend.
-- `--no-whisper` — disable transcription entirely; frames only.
 - `--out-dir DIR` — keep working files somewhere specific (default: auto-generated tmp dir).
 
 ## Limits
 
 - **Best accuracy: under 10 minutes.** Past that the script prints a "sparse scan" warning — re-run focused on the part you actually care about with `--start`/`--end`.
 - **Hard caps: 2 fps, 100 frames.** Frame count drives token cost; the script enforces this even when the auto-fps math would imply higher.
-- **Whisper upload limit: 25 MB.** At mono 16 kHz that's about 50 minutes of audio. Longer videos need either captions or `--start`/`--end` to a smaller window.
+- **Groq / OpenAI upload limit: 25 MB** (~50 min of mono 16 kHz audio). For longer videos, use `--provider assemblyai` or `--provider deepgram` — both accept files up to 5 GB.
 - **No private platforms.** This skill doesn't log into anything. Public URLs and local files only. If yt-dlp can't reach it without auth, neither can `/watch`.
 
 ## Structure
@@ -193,8 +191,8 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 MIT license.
 
-Built on `yt-dlp`, `ffmpeg`, and Claude's multimodal `Read` tool. Whisper transcription via [Groq](https://groq.com) or [OpenAI](https://openai.com).
+Built on `yt-dlp`, `ffmpeg`, and Claude's multimodal `Read` tool. Transcription via [Groq](https://groq.com), [AssemblyAI](https://www.assemblyai.com), [Deepgram](https://deepgram.com), or [OpenAI](https://openai.com).
 
 ---
 
-[github.com/bradautomates/claude-video](https://github.com/bradautomates/claude-video) · [LICENSE](LICENSE)
+[github.com/pheistman/claude-watch](https://github.com/pheistman/claude-watch) · [LICENSE](LICENSE)

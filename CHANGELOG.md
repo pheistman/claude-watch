@@ -2,6 +2,28 @@
 
 All notable changes to `/watch` are documented here.
 
+## [2.0.0] — 2026-06-02
+
+### Added
+- Multi-provider transcription: AssemblyAI, Deepgram, Groq, OpenAI
+- `--provider groq|assemblyai|deepgram|openai` flag (replaces `--whisper`)
+- Duration-aware auto-selection: video < 30 min → Groq; ≥ 30 min → AssemblyAI
+- AssemblyAI async upload/poll pipeline — no 25 MB file-size limit
+- Deepgram nova-2 synchronous transcription (utterance-level timestamps)
+- `setup.py` scaffolds all 4 provider keys in `~/.config/watch/.env`
+- `setup.py --check` / `--json` report includes all 4 providers
+
+### Changed
+- Transcript-first pipeline: Claude reads the transcript before frame images,
+  dramatically reducing token cost for most videos
+- `--whisper groq|openai` kept as a deprecated alias for `--provider`
+- `whisper.py` rewritten in pure stdlib (no pip deps); multipart upload via
+  `urllib` replaces `curl` subprocess calls
+
+### Fixed
+- Long-video transcription: AssemblyAI accepts files up to 5 GB, eliminating
+  the 25 MB / ~50 min ceiling that affected Groq and OpenAI
+
 ## [0.1.3] — 2026-05-09
 
 ### Fixed

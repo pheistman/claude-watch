@@ -32,19 +32,27 @@ CONFIG_DIR = Path.home() / ".config" / "watch"
 CONFIG_FILE = CONFIG_DIR / ".env"
 ENV_TEMPLATE = """# /watch API configuration
 #
-# Whisper transcription fallback — used only when yt-dlp cannot get captions
-# (or when you point /watch at a local file with no subtitles).
+# Transcription fallback — used when yt-dlp cannot get native captions
+# (or when pointing /watch at a local file with no subtitles).
 #
-# Groq is preferred: it runs whisper-large-v3 at a fraction of OpenAI's price
-# and is faster in practice. OpenAI is the compatible fallback.
+# Provider auto-selection (no --provider flag):
+#   video < 30 min  →  Groq → AssemblyAI → Deepgram → OpenAI
+#   video ≥ 30 min  →  AssemblyAI → Groq → Deepgram → OpenAI
 #
-# Get a Groq key:  https://console.groq.com/keys
-# Get an OpenAI key:  https://platform.openai.com/api-keys
+# Groq      — whisper-large-v3; fast, synchronous; rate-limited on free tier
+#             https://console.groq.com/keys
+# AssemblyAI — async upload+poll; no audio-seconds cap; 100 hrs/month free
+#             https://www.assemblyai.com/dashboard/signup
+# Deepgram  — nova-2; synchronous; $200 free credit
+#             https://console.deepgram.com/signup
+# OpenAI    — whisper-1; fallback only (quota issues common on free accounts)
+#             https://platform.openai.com/api-keys
 #
-# Leave both blank to disable Whisper — /watch will still work, but videos
-# without native captions will come back frames-only.
+# Set at least one key. Leave unused ones blank.
 
 GROQ_API_KEY=
+ASSEMBLYAI_API_KEY=
+DEEPGRAM_API_KEY=
 OPENAI_API_KEY=
 """
 
@@ -96,10 +104,14 @@ def _read_env_key(name: str) -> str | None:
 
 
 def _have_api_key() -> tuple[bool, str | None]:
-    if _read_env_key("GROQ_API_KEY"):
-        return True, "groq"
-    if _read_env_key("OPENAI_API_KEY"):
-        return True, "openai"
+    for name, backend in [
+        ("GROQ_API_KEY", "groq"),
+        ("ASSEMBLYAI_API_KEY", "assemblyai"),
+        ("DEEPGRAM_API_KEY", "deepgram"),
+        ("OPENAI_API_KEY", "openai"),
+    ]:
+        if _read_env_key(name):
+            return True, backend
     return False, None
 
 
@@ -238,7 +250,7 @@ def cmd_check() -> int:
     if s["missing_binaries"]:
         parts.append(f"missing binaries: {', '.join(s['missing_binaries'])}")
     if not s["has_api_key"]:
-        parts.append("no Whisper API key (GROQ_API_KEY or OPENAI_API_KEY)")
+        parts.append("no transcription API key (GROQ_API_KEY, ASSEMBLYAI_API_KEY, DEEPGRAM_API_KEY, or OPENAI_API_KEY)")
     installer = Path(__file__).resolve()
     sys.stderr.write(
         f"[watch] setup incomplete ({'; '.join(parts)}). "
@@ -304,9 +316,11 @@ def cmd_install() -> int:
     print("")
     print("[setup] one step left: add a Whisper API key.")
     print("")
-    print(f"  Edit {CONFIG_FILE} and set either:")
-    print("    GROQ_API_KEY=...    (preferred — cheaper, faster; get one at console.groq.com/keys)")
-    print("    OPENAI_API_KEY=...  (fallback; get one at platform.openai.com/api-keys)")
+    print(f"  Edit {CONFIG_FILE} and set at least one of:")
+    print("    GROQ_API_KEY=...        (fast, synchronous; console.groq.com/keys)")
+    print("    ASSEMBLYAI_API_KEY=...  (best for long videos; assemblyai.com)")
+    print("    DEEPGRAM_API_KEY=...    (nova-2; console.deepgram.com)")
+    print("    OPENAI_API_KEY=...      (fallback; platform.openai.com/api-keys)")
     print("")
     print("  Without a key, /watch still works but videos without captions come back frames-only.")
     return 3
