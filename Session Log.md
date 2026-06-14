@@ -2,6 +2,28 @@
 
 ---
 
+## Session: 14 June 2026
+**Topics:** upstream issue triage, file-size routing, transcription provider selection
+
+### What was accomplished
+- Triaged new activity on `bradautomates/claude-video`: lutzleonhardt's independent no-download fork (comment on #31), drlee91's Deepgram PR #35, issue #25 closed with joweiser abandoning upstream, Kosmo1 confirming the `allowed-tools` bug on #6
+- Switched transcription provider routing from duration-based (30 min threshold) to file-size-based (24 MB threshold) — the actual Whisper constraint, not a proxy for it
+- For audio > 24 MB, provider order changed to `assemblyai → deepgram → groq → openai` (groq/openai demoted since they 413 on large files)
+- Audio extraction moved inside `transcribe_video` before provider selection, so file size is known at routing time
+- `duration_seconds` parameter removed from `transcribe_video` and `load_api_key`; watch.py pre-check updated to drop duration arg
+
+### How key problems were solved
+- Duration as a routing proxy → file size as routing trigger: file size is the actual Whisper API constraint; duration at 64 kbps could vary (30 min ≈ 14 MB, well under the limit). Borrowed the trigger from drlee91's PR #35, kept our AssemblyAI backend.
+
+### New critical findings
+1. lutzleonhardt independently built a fork that never downloads the video — captions only via `yt-dlp --skip-download`, audio download only as Whisper fallback, frames opt-in with `--frames`. Strong signal that transcript-first / no-download is the right default.
+2. joweiser concluded Brad is not actively maintaining the upstream repo (published as YouTube demo, not a maintained project) — no point waiting for upstream merges.
+
+### Immediate next actions
+- [ ] Evaluate lutzleonhardt's no-download approach (`yt-dlp --skip-download` for captions, audio only as fallback) — could skip ffmpeg as a hard dependency for captioned sources
+
+---
+
 ## 2026-06-02 — Fork execution + multi-provider launch
 
 ### Accomplished

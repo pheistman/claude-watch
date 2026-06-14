@@ -14,7 +14,7 @@ A Claude Code skill that gives Claude the ability to watch videos. Paste a URL o
 
 **Key differentiators from upstream (`bradautomates/claude-video`):**
 - Multi-provider transcription: Groq, AssemblyAI, Deepgram, OpenAI — interchangeable via `--provider`
-- Duration-aware auto-selection: < 30 min → Groq; ≥ 30 min → AssemblyAI (async, no 25 MB cap)
+- File-size-aware auto-selection: audio ≤ 24 MB → Groq; > 24 MB → AssemblyAI → Deepgram (24 MB is the actual Whisper API limit, not a duration proxy)
 - Transcript-first pipeline: Claude reads transcript before frame images (15–25× token saving)
 - `whisper.py` rewritten in pure stdlib (`urllib`) — no curl subprocess
 
@@ -24,9 +24,9 @@ A Claude Code skill that gives Claude the ability to watch videos. Paste a URL o
 scripts/
   watch.py       — entry point: orchestrates download → frames → transcript → Claude
   whisper.py     — transcription engine; public API:
-                   transcribe_video(video_path, audio_out, backend, api_key, duration_seconds)
+                   transcribe_video(video_path, audio_out, backend, api_key)
                    → (segments, provider_used) where segments = [{start, end, text}]
-                   load_api_key(preferred, duration_seconds) → (provider_name, api_key)
+                   load_api_key(preferred, file_size_bytes) → (provider_name, api_key)
   download.py    — yt-dlp wrapper
   frames.py      — ffmpeg frame extraction + auto-fps logic
   transcribe.py  — VTT parsing + dedup + Whisper orchestration
@@ -72,10 +72,12 @@ Wrap command: `/wrap` — `.claude/commands/wrap.md`
 - Pushed to `pheistman/claude-watch` — commits `033b3b7` → `29a7fc9`
 - `commands/watch.md`: `allowed-tools` inline-list YAML bug fixed
 - Fork notification + issue comments posted on `bradautomates/claude-video`
+- Routing switched from duration-based (30 min) to file-size-based (24 MB) — actual Whisper API limit; audio extracted before provider selection so size is known at routing time
 
 ## Outstanding
 
 - [ ] Manually run `echo "<token>" | ggshield auth login --method=token` on Mac (blocked by auto-mode; token is in Ansible vault at `~/Documents/projects/raspberry-pi/vars/vars.yml`)
+- [ ] Evaluate lutzleonhardt's no-download approach: `yt-dlp --skip-download` for captions, audio only as Whisper fallback, frames opt-in — would make ffmpeg optional for captioned sources
 - [ ] Consider `--json` output mode (bradautomates/claude-video PR #24 by joweiser)
 - [ ] Add frontmatter validation to `build-skill.sh` for `allowed-tools` format (suggested in issue #6)
 - [ ] Consider SenseVoice/FunASR as local backend (issue #29) if GPU available

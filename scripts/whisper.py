@@ -5,9 +5,10 @@ Strategy: extract audio, upload to whichever provider is available and best-suit
 Returns segments in the same shape as transcribe.parse_vtt so the rest of the
 pipeline (filter_range, format_transcript) doesn't care where the transcript came from.
 
-Auto-selection (no --provider flag):
-  video < 30 min  → Groq → AssemblyAI → Deepgram → OpenAI
-  video ≥ 30 min  → AssemblyAI → Groq → Deepgram → OpenAI
+Auto-selection (no --provider flag) is based on extracted audio file size:
+  audio ≤ 24 MB  → Groq → AssemblyAI → Deepgram → OpenAI
+  audio > 24 MB  → AssemblyAI → Deepgram → Groq → OpenAI
+  (24 MB is the threshold because Groq/OpenAI Whisper reject uploads over 25 MB with HTTP 413)
 
 Pure stdlib — no pip dependencies.
 """
@@ -53,8 +54,8 @@ _KEY_NAMES: dict[str, str] = {
     "deepgram":   "DEEPGRAM_API_KEY",
 }
 
-# Above this duration, prefer AssemblyAI (async, no audio-seconds cap)
-_LONG_VIDEO_THRESHOLD_S = 1800   # 30 minutes
+# Above this file size, Groq/OpenAI Whisper return HTTP 413 — prefer async providers
+_WHISPER_MAX_BYTES = 24 * 1024 * 1024   # 24 MB (Whisper limit is 25 MB)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -95,14 +96,14 @@ def _load_single_key(env_var: str) -> str | None:
 
 def load_api_key(
     preferred: str | None = None,
-    duration_seconds: float | None = None,
+    file_size_bytes: int | None = None,
 ) -> tuple[str, str] | tuple[None, None]:
     """Return (provider_name, api_key).
 
     When preferred is set, only that provider is tried.
-    When preferred is None, auto-selects based on duration:
-      < 30 min  → groq → assemblyai → deepgram → openai
-      ≥ 30 min  → assemblyai → groq → deepgram → openai
+    When preferred is None, auto-selects based on audio file size:
+      ≤ 24 MB  → groq → assemblyai → deepgram → openai
+      > 24 MB  → assemblyai → deepgram → groq → openai
     """
     if preferred is not None:
         if preferred not in _KEY_NAMES:
@@ -113,8 +114,8 @@ def load_api_key(
         key = _load_single_key(_KEY_NAMES[preferred])
         return (preferred, key) if key else (None, None)
 
-    if duration_seconds is not None and duration_seconds >= _LONG_VIDEO_THRESHOLD_S:
-        order = ["assemblyai", "groq", "deepgram", "openai"]
+    if file_size_bytes is not None and file_size_bytes > _WHISPER_MAX_BYTES:
+        order = ["assemblyai", "deepgram", "groq", "openai"]
     else:
         order = ["groq", "assemblyai", "deepgram", "openai"]
 
@@ -440,16 +441,21 @@ def transcribe_video(
     audio_out: Path,
     backend: str | None = None,
     api_key: str | None = None,
-    duration_seconds: float | None = None,
 ) -> tuple[list[dict], str]:
     """Extract audio and transcribe with the best available provider.
 
     Returns (segments, provider_used). Raises SystemExit on failure.
-    duration_seconds is used for auto-selection when backend is None.
+    Provider auto-selection is based on audio file size after extraction.
     """
+    print("[watch] extracting audio…", file=sys.stderr)
+    audio_path = extract_audio(video_path, audio_out)
+    size_bytes = audio_path.stat().st_size
+    size_kb = size_bytes / 1024
+    print(f"[watch] audio: {size_kb:.0f} kB", file=sys.stderr)
+
     if backend is None or api_key is None:
         detected_backend, detected_key = load_api_key(
-            preferred=backend, duration_seconds=duration_seconds
+            preferred=backend, file_size_bytes=size_bytes
         )
         backend  = backend  or detected_backend
         api_key  = api_key  or detected_key
@@ -462,11 +468,6 @@ def transcribe_video(
             "in the environment or in ~/.config/watch/.env. "
             f"Run `python3 {setup_py}` to configure."
         )
-
-    print(f"[watch] extracting audio for {backend}…", file=sys.stderr)
-    audio_path = extract_audio(video_path, audio_out)
-    size_kb = audio_path.stat().st_size / 1024
-    print(f"[watch] audio: {size_kb:.0f} kB", file=sys.stderr)
 
     if backend == "groq":
         response  = _post_whisper(GROQ_ENDPOINT, api_key, GROQ_MODEL, audio_path)

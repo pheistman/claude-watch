@@ -129,15 +129,13 @@ def main() -> int:
             print(f"[watch] subtitle parse failed: {exc}", file=sys.stderr)
 
     if not transcript_segments and not args.no_whisper:
-        backend, api_key = load_api_key(args.provider, duration_seconds=full_duration)
+        backend, api_key = load_api_key(args.provider)
         if backend and api_key:
             try:
                 all_segments, used_backend = transcribe_video(
                     video_path,
                     work / "audio.mp3",
-                    backend=backend,
-                    api_key=api_key,
-                    duration_seconds=full_duration,
+                    backend=args.provider,
                 )
                 transcript_segments = filter_range(all_segments, start_sec, end_sec) if focused else all_segments
                 transcript_text = format_transcript(transcript_segments)
